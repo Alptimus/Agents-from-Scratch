@@ -100,6 +100,66 @@ result = agent.execute_task("Your task")
 # Prints: tool name, params, result, iteration count
 ```
 
+### View Task Execution Logs
+
+Every task execution generates detailed logs in the `logs/` directory:
+
+**Log Files Generated:**
+- `agent_YYYYMMDD_HHMMSS.log` — Human-readable plaintext log
+- `agent_YYYYMMDD_HHMMSS.jsonl` — Machine-parseable JSON Lines log (one object per line)
+
+**Log Filename Pattern:**
+The timestamp is generated when the task starts (format: Year-Month-Day_Hour-Minute-Second).
+Each task execution gets its own unique pair of log files.
+
+**How to Use Logs:**
+
+```python
+from orchestrator import OllamaAgent
+
+agent = OllamaAgent(log_dir="logs")  # Default logs directory, or customize
+result = agent.execute_task("Read config.json and count keys")
+print(f"Logs stored in: {agent.log_files['txt']} and {agent.log_files['json']}")
+```
+
+**Plaintext Log Example:**
+```
+2026-03-24 14:23:15,789 [INFO] orchestrator.20260324_142315 — [LOG_INIT] Logging initialized | ...
+2026-03-24 14:23:15,825 [INFO] orchestrator.20260324_142315 — [TASK_INIT] Backend: Ollama | Model: mistral | ...
+2026-03-24 14:23:15,950 [INFO] orchestrator.20260324_142315 — [ITERATION_START] Iteration: 1 | Prompt: ...
+2026-03-24 14:23:17,145 [INFO] orchestrator.20260324_142315 — [LLM_CALL] Response: I'll read the file... | Latency: 1195ms
+2026-03-24 14:23:17,156 [INFO] orchestrator.20260324_142315 — [TOOL_EXTRACTION] Tools: read_file | Count: 1
+2026-03-24 14:23:17,287 [INFO] orchestrator.20260324_142315 — [TOOL_EXECUTION] ✓ Tool: read_file | Params: {...} | Latency: 131ms
+2026-03-24 14:23:18,456 [INFO] orchestrator.20260324_142315 — [TASK_COMPLETE] Status: SUCCESS | Iterations: 2 | Duration: 2.8s
+```
+
+**JSON Lines Log Example:**
+Each line is a valid JSON object that can be parsed:
+```bash
+tail logs/agent_20260324_142315.jsonl | jq .event_type
+# Outputs: TASK_INIT, ITERATION_START, LLM_CALL, TOOL_EXTRACTION, TOOL_EXECUTION, TASK_COMPLETE
+```
+
+Parse JSON logs programmatically:
+```python
+import json
+
+with open("logs/agent_20260324_142315.jsonl") as f:
+    for line in f:
+        event = json.loads(line)
+        print(f"{event['event_type']:20} {event['message']}")
+```
+
+**Logged Data:**
+Each log entry captures:
+- **TASK_INIT**: Backend, model, configuration
+- **ITERATION_START**: Iteration number, prompt sent to LLM
+- **LLM_CALL**: LLM response text, latency in milliseconds
+- **TOOL_EXTRACTION**: Tool names extracted from LLM response
+- **TOOL_EXECUTION**: Tool name, parameters, result, execution latency
+- **TASK_COMPLETE**: Success status, iterations count, total duration
+- **ERROR**: Error messages with context information
+
 ---
 
 ## Troubleshooting
