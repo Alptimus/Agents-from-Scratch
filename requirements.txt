@@ -2,3 +2,4 @@ requests
 google-genai
 python-decouple
 numpy
+python-docx

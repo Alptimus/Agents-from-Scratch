@@ -12,6 +12,7 @@ import os
 import subprocess
 from pathlib import Path
 from typing import Any, Dict, List
+import docx # Added for docx file reading
 
 
 def read_file(file_path: str) -> Dict[str, Any]:
@@ -82,6 +83,27 @@ def run_shell(command: str) -> Dict[str, Any]:
         return {"success": False, "error": f"Error executing command: {str(e)}"}
 
 
+def read_docx_file(file_path: str) -> Dict[str, Any]:
+    """Read the complete text content from a .docx file."""
+    try:
+        path = Path(file_path)
+        if not path.exists():
+            return {"success": False, "error": f"File not found: {file_path}"}
+        if not path.is_file():
+            return {"success": False, "error": f"Path is not a file: {file_path}"}
+        if not file_path.lower().endswith(".docx"):
+            return {"success": False, "error": f"File is not a .docx file: {file_path}"}
+
+        document = docx.Document(file_path)
+        full_text = []
+        for para in document.paragraphs:
+            full_text.append(para.text)
+        content = "\n".join(full_text)
+        return {"success": True, "content": content, "file_path": file_path}
+    except Exception as e:
+        return {"success": False, "error": f"Error reading docx file: {str(e)}"}
+
+
 # Tool registry: list of available tools
 TOOLS = [
     {
@@ -132,6 +154,17 @@ TOOLS = [
             }
         },
         "fn": run_shell
+    },
+    {
+        "name": "read_docx_file",
+        "description": "Read the complete text content from a .docx file.",
+        "parameters": {
+            "file_path": {
+                "type": "string",
+                "description": "Absolute or relative path to the .docx file to read"
+            }
+        },
+        "fn": read_docx_file
     }
 ]
 
