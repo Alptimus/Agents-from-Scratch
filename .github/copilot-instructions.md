@@ -121,6 +121,17 @@ result = agent.execute_task("Your task here")
 | [requirements.txt](requirements.txt) | Python dependencies | Adding packages or version pinning |
 | [Dockerfile](Dockerfile) | Container runtime | Updating LLM model, layer dependencies, or ports |
 
+## Specialized Guidance
+
+For specific development tasks, refer to these focused instruction files:
+
+| Task | Instruction File | Coverage |
+|------|------------------|----------|
+| **Adding new tools** | [.github/instructions/tools.instructions.md](.github/instructions/tools.instructions.md) | Tool design patterns, response format, error handling, tool discovery, adding tools to registry |
+| **Understanding logs** | [.github/instructions/logging.instructions.md](.github/instructions/logging.instructions.md) | Dual plaintext + JSON Lines logging, event types, performance analysis, debugging logs |
+| **Writing tests** | [.github/instructions/testing.instructions.md](.github/instructions/testing.instructions.md) | Unit tests, mocking, integration tests, pytest setup, CI/CD patterns, coverage targets |
+| **Agent implementation** | [.github/instructions/orchestrator.instructions.md](.github/instructions/orchestrator.instructions.md) | Modifying agent behavior, adding backends, debugging iteration loops |
+
 ## Common Tasks
 
 ### Add a New Tool
