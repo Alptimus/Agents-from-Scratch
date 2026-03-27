@@ -3,11 +3,18 @@
 Minimal CLI entry point for autonomous agent task execution.
 
 Provides a command-line interface to execute tasks using Ollama or Gemini backends.
+Supports two input modes: direct task prompt or SKILL.md file input.
 
 Usage:
+    # Mode 1: Direct prompt
     python main.py "Your task description" --provider ollama --model mistral
     python main.py "Your task" --provider gemini --model gemini-2.5-flash
-    python main.py "Your task"  # defaults to ollama with mistral model
+    
+    # Mode 2: Skill file input
+    python main.py --skill path/to/SKILL.md --provider gemini
+    
+    # Mode 3: Skill + additional prompt (merged, skill is primary)
+    python main.py "Also check performance" --skill path/to/SKILL.md
 """
 
 import argparse
@@ -16,6 +23,7 @@ import requests
 from decouple import config
 
 from orchestrator import OllamaAgent, GeminiAgent
+from skill_loader import load_skill_file
 
 
 def validate_ollama_connection(base_url: str = "http://localhost:11434") -> bool:
@@ -57,15 +65,26 @@ def main():
         epilog="""
 Examples:
   %(prog)s "List all Python files" --provider ollama --model mistral
-  %(prog)s "Analyze code quality" --provider gemini --model gemini-2.5-flash
-  %(prog)s "Your task here"  # uses default: gemini + gemini-2.5-flash
+  %(prog)s "Analyze code quality" --provider gemini
+  %(prog)s --skill .github/skills/code-analysis/SKILL.md
+  %(prog)s "Focus on performance" --skill path/to/SKILL.md -q
         """,
     )
 
-    # Positional argument: task description
+    # Positional argument: task description (optional if --skill provided)
     parser.add_argument(
         "task",
-        help="Task description for the agent to execute",
+        nargs="?",
+        default=None,
+        help="Task description for the agent to execute (required if --skill not provided)",
+    )
+
+    # Skill file input
+    parser.add_argument(
+        "--skill",
+        type=str,
+        default=None,
+        help="Path to SKILL.md file to use as task input (takes priority over task prompt)",
     )
 
     # Optional arguments
@@ -99,6 +118,40 @@ Examples:
 
     # Set verbose flag based on arguments
     verbose = args.verbose and not args.quiet
+
+    # Load skill file if provided, and merge with task prompt if both given
+    task_description = None
+    skill_info = None
+
+    if args.skill:
+        # Load skill file
+        try:
+            skill_info = load_skill_file(args.skill)
+            task_description = skill_info["description"]
+
+            if args.task:
+                # Both skill and prompt provided: merge them (skill is primary)
+                task_description = f"{task_description}\n\nAdditional user instructions:\n{args.task}"
+
+            if verbose:
+                print(f"📚 Skill loaded: {skill_info['name']} from {args.skill}")
+        except (FileNotFoundError, ValueError) as e:
+            print(
+                f"❌ Error loading skill file: {str(e)}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+    elif args.task:
+        # Only prompt provided (traditional mode)
+        task_description = args.task
+    else:
+        # Neither skill nor prompt provided
+        parser.print_help()
+        print(
+            "\n❌ Error: You must provide either a task prompt or a --skill file path.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     # Determine model based on provider if not specified
     if args.model is None:
@@ -144,10 +197,10 @@ Examples:
     try:
         if verbose:
             print(f"\n🤖 Agent: {args.provider.upper()} ({model})")
-            print(f"📋 Task: {args.task}\n")
+            print(f"📋 Task: {task_description[:100]}{'...' if len(task_description) > 100 else ''}\n")
             print("=" * 70)
 
-        result = agent.execute_task(args.task)
+        result = agent.execute_task(task_description)
 
         if verbose:
             print("=" * 70)
