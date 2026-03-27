@@ -23,6 +23,7 @@ from logger_config import setup_logging
 # sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from tools import TOOLS, get_tool_by_name, format_tool_descriptions
+from prompts import get_system_prompt, get_initial_prompt, get_continuation_prompt
 
 # Import gemini_utils - handle both module and direct execution
 try:
@@ -261,25 +262,8 @@ class OllamaAgent:
         conversation_history = []
         tool_descriptions = format_tool_descriptions()
 
-        system_prompt = f"""You are a helpful assistant that accomplishes tasks by using tools.
-
-AVAILABLE TOOLS:
-{tool_descriptions}
-
-When you need to use a tool, output a JSON object on a single line with this format:
-{{"tool": "tool_name", "params": {{"param1": "value1", "param2": "value2"}}}}
-
-You may call multiple tools in one response by outputting multiple JSON objects.
-
-After all tool calls are complete, summarize what you did and the results.
-Always be clear about what you're doing and why.
-"""
-
-        initial_prompt = f"""{system_prompt}
-
-TASK: {task_description}
-
-Think through this step by step. What tools do you need to use? How will you accomplish this?"""
+        system_prompt = get_system_prompt(tool_descriptions)
+        initial_prompt = get_initial_prompt(system_prompt, task_description)
 
         if self.verbose:
             print(f"\n[TASK] {task_description}\n")
@@ -366,17 +350,7 @@ Think through this step by step. What tools do you need to use? How will you acc
 
             # Prepare next prompt with tool results
             results_summary = json.dumps(all_results, indent=2)
-            initial_prompt = f"""{system_prompt}
-
-TASK: {task_description}
-
-Previous response:
-{llm_response}
-
-Tool execution results:
-{results_summary}
-
-Based on these results, what's the next step? If the task is complete, say so explicitly and summarize what was accomplished."""
+            initial_prompt = get_continuation_prompt(system_prompt, task_description, llm_response, results_summary)
 
         # Max iterations reached
         task_duration = time.perf_counter() - task_start_time
@@ -599,25 +573,8 @@ class GeminiAgent:
         conversation_history = []
         tool_descriptions = format_tool_descriptions()
 
-        system_prompt = f"""You are a helpful assistant that accomplishes tasks by using tools.
-
-AVAILABLE TOOLS:
-{tool_descriptions}
-
-When you need to use a tool, output a JSON object on a single line with this format:
-{{"tool": "tool_name", "params": {{"param1": "value1", "param2": "value2"}}}}
-
-You may call multiple tools in one response by outputting multiple JSON objects.
-
-After all tool calls are complete, summarize what you did and the results.
-Always be clear about what you're doing and why.
-"""
-
-        initial_prompt = f"""{system_prompt}
-
-TASK: {task_description}
-
-Think through this step by step. What tools do you need to use? How will you accomplish this?"""
+        system_prompt = get_system_prompt(tool_descriptions)
+        initial_prompt = get_initial_prompt(system_prompt, task_description)
 
         if self.verbose:
             print(f"\n[TASK] {task_description}\n")
@@ -704,17 +661,7 @@ Think through this step by step. What tools do you need to use? How will you acc
 
             # Prepare next prompt with tool results
             results_summary = json.dumps(all_results, indent=2)
-            initial_prompt = f"""{system_prompt}
-
-TASK: {task_description}
-
-Previous response:
-{llm_response}
-
-Tool execution results:
-{results_summary}
-
-Based on these results, what's the next step? If the task is complete, say so explicitly and summarize what was accomplished."""
+            initial_prompt = get_continuation_prompt(system_prompt, task_description, llm_response, results_summary)
 
         # Max iterations reached
         task_duration = time.perf_counter() - task_start_time
