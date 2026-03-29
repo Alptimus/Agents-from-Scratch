@@ -51,12 +51,13 @@ class JSONLineHandler(logging.Handler):
         
         Args:
             record: LogRecord from the logging system
+        
+        Supports optional full_text via record.full_text attribute set by _log_with_full_text()
         """
         try:
             # Parse event_type from message (format: "[EVENT_TYPE] ...")
             message = record.getMessage()
             event_type = "UNKNOWN"
-            data = {}
             
             # Extract event type from bracket notation: "[EVENT_TYPE]"
             if message.startswith("[") and "]" in message:
@@ -74,6 +75,10 @@ class JSONLineHandler(logging.Handler):
                 "event_type": event_type,
                 "message": message_content,
             }
+            
+            # Add full_text field if provided via record attribute
+            if hasattr(record, 'full_text') and record.full_text is not None:
+                log_obj["full_text"] = record.full_text
             
             # Write as single line JSON
             with open(self.filename, 'a') as f:

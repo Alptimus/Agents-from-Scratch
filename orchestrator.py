@@ -14,6 +14,7 @@ Architecture:
 """
 
 import json
+import logging
 import re
 import sys
 import time
@@ -86,16 +87,28 @@ class BaseAgent(ABC):
             self.logger.info(f"[TASK_INIT] Backend: {backend_name} | Model: {self.model} | Max Iterations: {self.max_iterations} | {backend_info}")
 
     def _log_iteration_start(self, iteration: int, prompt_preview: str) -> None:
-        """Log start of iteration with prompt preview."""
+        """Log start of iteration with full prompt captured in JSON log."""
         if self.logger:
             preview = prompt_preview[:150].replace('\n', ' ') + ("..." if len(prompt_preview) > 150 else "")
-            self.logger.info(f"[ITERATION_START] Iteration: {iteration} | Prompt: {preview}")
+            # Log preview to plaintext, full prompt to JSON
+            self._log_with_full_text(
+                "ITERATION_START",
+                f"Iteration: {iteration} | Prompt: {preview}",
+                prompt_preview,
+                {"iteration": iteration}
+            )
 
     def _log_llm_call(self, response_text: str, latency_ms: float) -> None:
-        """Log LLM response with latency."""
+        """Log LLM response with latency. Full response captured in JSON log."""
         if self.logger:
             response_preview = response_text[:100].replace('\n', ' ') + ("..." if len(response_text) > 100 else "")
-            self.logger.info(f"[LLM_CALL] Response: {response_preview} | Latency: {latency_ms:.0f}ms")
+            # Log preview to plaintext, full response to JSON
+            self._log_with_full_text(
+                "LLM_CALL",
+                f"Response: {response_preview} | Latency: {latency_ms:.0f}ms",
+                response_text,
+                {"latency_ms": latency_ms}
+            )
 
     def _log_tool_extraction(self, tool_calls: List[Dict]) -> None:
         """Log extracted tool calls."""
@@ -107,23 +120,68 @@ class BaseAgent(ABC):
                 self.logger.info(f"[TOOL_EXTRACTION] Tools: {tool_names} | Count: {len(tool_calls)}")
 
     def _log_tool_execution(self, tool_name: str, params: Dict, result: Dict, latency_ms: float) -> None:
-        """Log individual tool execution."""
+        """Log individual tool execution. Full result captured in JSON log."""
         if self.logger:
             success = result.get("success", False)
             status = "✓" if success else "✗"
             result_preview = str(result.get("result") or result.get("error", ""))[:50]
-            self.logger.info(f"[TOOL_EXECUTION] {status} Tool: {tool_name} | Params: {params} | Result: {result_preview} | Latency: {latency_ms:.0f}ms")
+            message_preview = f"{status} Tool: {tool_name} | Params: {params} | Result: {result_preview} | Latency: {latency_ms:.0f}ms"
+            # Log preview to plaintext, full result dict to JSON
+            result_full_text = json.dumps(result, indent=2)
+            self._log_with_full_text(
+                "TOOL_EXECUTION",
+                message_preview,
+                result_full_text,
+                {"tool_name": tool_name, "params": params, "latency_ms": latency_ms}
+            )
 
     def _log_task_complete(self, success: bool, result_msg: str, iterations: int, duration_s: float) -> None:
-        """Log task completion."""
+        """Log task completion. Full result message captured in JSON log."""
         if self.logger:
             status = "SUCCESS" if success else "FAILED"
-            self.logger.info(f"[TASK_COMPLETE] Status: {status} | Iterations: {iterations} | Duration: {duration_s:.1f}s | Result: {result_msg[:80]}")
+            result_preview = result_msg[:80] + ("..." if len(result_msg) > 80 else "")
+            message_preview = f"Status: {status} | Iterations: {iterations} | Duration: {duration_s:.1f}s | Result: {result_preview}"
+            # Log preview to plaintext, full result to JSON
+            self._log_with_full_text(
+                "TASK_COMPLETE",
+                message_preview,
+                result_msg,
+                {"success": success, "iterations": iterations, "duration_s": duration_s}
+            )
 
     def _log_error(self, error_msg: str, context: str = "") -> None:
         """Log error with context."""
         if self.logger:
             self.logger.error(f"[ERROR] {error_msg} | Context: {context}")
+
+    def _log_with_full_text(self, event_type: str, message_preview: str, full_text: str, metadata: Dict = None) -> None:
+        """
+        Log to both plaintext (preview) and JSON (full text) with metadata.
+        
+        Args:
+            event_type: Event type string (e.g., "LLM_CALL", "TOOL_EXECUTION")
+            message_preview: Preview message for plaintext log
+            full_text: Complete text for JSON log's full_text field
+            metadata: Additional metadata dict to attach to JSON log
+        """
+        if self.logger:
+            # Log to plaintext handler with preview only
+            record = logging.LogRecord(
+                name=self.logger.name,
+                level=logging.INFO,
+                pathname="",
+                lineno=0,
+                msg=f"[{event_type}] {message_preview}",
+                args=(),
+                exc_info=None
+            )
+            
+            # Add full_text and metadata to record for JSON handler
+            record.full_text = full_text
+            if metadata:
+                record.metadata = metadata
+            
+            self.logger.handle(record)
 
     @abstractmethod
     def _get_backend_name(self) -> str:
@@ -270,6 +328,7 @@ class BaseAgent(ABC):
             if not llm_response:
                 error_msg = "LLM call failed"
                 self._log_error(error_msg, f"Iteration {iteration}")
+                self._log_conversation_history(conversation_history)
                 return {
                     "success": False,
                     "error": error_msg,
@@ -284,7 +343,7 @@ class BaseAgent(ABC):
             })
 
             if self.verbose:
-                print(f"[LLM] {llm_response[:200]}..." if len(llm_response) > 200 else f"[LLM] {llm_response}")
+                print(f"[LLM] {llm_response}")
 
             # Extract and execute tools
             tool_calls = self._extract_tool_calls(llm_response)
@@ -296,6 +355,7 @@ class BaseAgent(ABC):
                     print("\n[SUCCESS] Task completed.\n")
                 task_duration = time.perf_counter() - task_start_time
                 self._log_task_complete(True, llm_response, iteration, task_duration)
+                self._log_conversation_history(conversation_history)
                 return {
                     "success": True,
                     "result": llm_response,
@@ -337,12 +397,44 @@ class BaseAgent(ABC):
         # Max iterations reached
         task_duration = time.perf_counter() - task_start_time
         self._log_error(f"Max iterations ({self.max_iterations}) reached without task completion", "Iteration limit")
+        self._log_conversation_history(conversation_history)
         return {
             "success": False,
             "error": f"Max iterations ({self.max_iterations}) reached without task completion",
             "last_response": llm_response,
             "conversation": conversation_history
         }
+    def _log_conversation_history(self, conversation: List[Dict]) -> None:
+        """
+        Log complete conversation history at task end.
+        
+        Logs to both plaintext (summary) and JSON (full export) for complete audit trail.
+        
+        Args:
+            conversation: List of conversation turns with agent responses and tool calls
+        """
+        if self.logger:
+            # Create summary line for plaintext log
+            num_iterations = len(conversation)
+            num_tool_calls = sum(len(item.get("tool_calls", [])) for item in conversation)
+            summary = f"Exported conversation with {num_iterations} iterations and {num_tool_calls} tool calls"
+            
+            # Log to both plaintext (summary) and JSON (full conversation)
+            record = logging.LogRecord(
+                name=self.logger.name,
+                level=logging.INFO,
+                pathname="",
+                lineno=0,
+                msg=f"[CONVERSATION_EXPORT] {summary}",
+                args=(),
+                exc_info=None
+            )
+            
+            # Add full conversation history to JSON output
+            record.full_text = json.dumps(conversation, indent=2)
+            record.metadata = {"iterations": num_iterations, "tool_calls": num_tool_calls}
+            
+            self.logger.handle(record)
 
 
 class OllamaAgent(BaseAgent):
