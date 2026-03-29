@@ -14,8 +14,9 @@ Usage:
     python main.py --skill path/to/SKILL.md --provider gemini
     
     # Mode 3: Skill + additional prompt (merged, skill is primary)
-    python main.py "Also check performance" --skill path/to/SKILL.md
-"""
+    python main.py "Also check performance" --skill path/to/SKILL.md    
+    # Mode 4: Enable Ollama extended thinking
+    python main.py "Analyze architecture" --provider ollama --think"""
 
 import argparse
 import sys
@@ -114,10 +115,18 @@ Examples:
         help="Suppress verbose output (same as not using --verbose)",
     )
 
+    parser.add_argument(
+        "--think",
+        action="store_true",
+        default=False,
+        help="Enable extended thinking mode for Ollama (Ollama backend only, default: False)",
+    )
+
     args = parser.parse_args()
 
     # Set verbose flag based on arguments
     verbose = args.verbose and not args.quiet
+    think = args.think
 
     # Load skill file if provided, and merge with task prompt if both given
     task_description = None
@@ -186,7 +195,7 @@ Examples:
     # Instantiate the appropriate agent
     try:
         if args.provider == "ollama":
-            agent = OllamaAgent(model=model, verbose=verbose)
+            agent = OllamaAgent(model=model, verbose=verbose, think=think)
         else:  # gemini
             agent = GeminiAgent(model=model, verbose=verbose)
     except Exception as e:

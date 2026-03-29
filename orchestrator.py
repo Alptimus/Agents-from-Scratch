@@ -358,7 +358,8 @@ class OllamaAgent(BaseAgent):
         model: str = "mistral",
         max_iterations: int = 10,
         verbose: bool = True,
-        log_dir: str = "logs"
+        log_dir: str = "logs",
+        think: bool = False
     ):
         """
         Initialize the Ollama agent.
@@ -369,10 +370,12 @@ class OllamaAgent(BaseAgent):
             max_iterations: Maximum number of agent iterations to prevent infinite loops
             verbose: Whether to print reasoning and progress
             log_dir: Directory for storing logs
+            think: Enable extended thinking mode for Ollama (default: False)
         """
         super().__init__(model, max_iterations, verbose, log_dir)
         self.ollama_base_url = ollama_base_url
         self.api_url = f"{ollama_base_url}/api/generate"
+        self.think = think
 
     def _get_backend_name(self) -> str:
         """Return the backend name."""
@@ -414,7 +417,7 @@ class OllamaAgent(BaseAgent):
                     "model": self.model,
                     "prompt": prompt,
                     "stream": False,
-                    "think": False
+                    "think": self.think
                 },
                 timeout=60
             )
