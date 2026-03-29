@@ -217,11 +217,11 @@ Examples:
         # Display result
         if result.get("success", False):
             print(f"\n✅ Task completed successfully!")
+            print(f"\nTotal Iterations: {result.get('iterations', '?')}")
             print("\n" + "=" * 70)
             print("RESULT")
             print("=" * 70)
             print(result.get("result", "No result returned"))
-            print(f"\nIterations: {result.get('iterations', '?')}")
             sys.exit(0)
         else:
             print(f"\n❌ Task failed!")
