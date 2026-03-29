@@ -144,7 +144,8 @@ class OllamaAgent:
                 json={
                     "model": self.model,
                     "prompt": prompt,
-                    "stream": False
+                    "stream": False,
+                    "think": False
                 },
                 timeout=60
             )

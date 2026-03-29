@@ -182,6 +182,50 @@ result = agent.execute_task("Your task")
 
 For custom logging, subclass the agent or add debug statements in [orchestrator.py](orchestrator.py).
 
+## Task Execution Logs
+
+Every task generates detailed logs in the `logs/` directory with two formats:
+- **`agent_YYYYMMDD_HHMMSS.log`** — Human-readable plaintext
+- **`agent_YYYYMMDD_HHMMSS.jsonl`** — Machine-parseable JSON Lines (one object per line)
+
+**Plaintext Log Example:**
+```
+2026-03-24 14:23:15,789 [INFO] orchestrator.20260324_142315 — [LOG_INIT] Logging initialized
+2026-03-24 14:23:15,825 [INFO] orchestrator.20260324_142315 — [TASK_INIT] Backend: Ollama | Model: mistral | ...
+2026-03-24 14:23:15,950 [INFO] orchestrator.20260324_142315 — [ITERATION_START] Iteration: 1 | Prompt: ...
+2026-03-24 14:23:17,145 [INFO] orchestrator.20260324_142315 — [LLM_CALL] Response: I'll read the file... | Latency: 1195ms
+2026-03-24 14:23:17,156 [INFO] orchestrator.20260324_142315 — [TOOL_EXTRACTION] Tools: read_file | Count: 1
+2026-03-24 14:23:17,287 [INFO] orchestrator.20260324_142315 — [TOOL_EXECUTION] ✓ Tool: read_file | Params: {...} | Latency: 131ms
+2026-03-24 14:23:18,456 [INFO] orchestrator.20260324_142315 — [TASK_COMPLETE] Status: SUCCESS | Iterations: 2 | Duration: 2.8s
+```
+
+**JSON Lines Log Example** (each line is valid JSON):
+```bash
+tail logs/agent_20260324_142315.jsonl | jq .event_type
+# Outputs: TASK_INIT, ITERATION_START, LLM_CALL, TOOL_EXTRACTION, TOOL_EXECUTION, TASK_COMPLETE
+```
+
+Parse logs programmatically:
+```python
+import json
+
+with open("logs/agent_YYYYMMDD_HHMMSS.jsonl") as f:
+    for line in f:
+        event = json.loads(line)
+        print(f"{event['event_type']:20} {event['message']}")
+```
+
+**Logged Events:**
+- **TASK_INIT**: Backend, model, configuration
+- **ITERATION_START**: Iteration number, prompt sent to LLM
+- **LLM_CALL**: LLM response text, latency (ms)
+- **TOOL_EXTRACTION**: Tool names extracted from LLM response
+- **TOOL_EXECUTION**: Tool name, parameters, result, latency (ms)
+- **TASK_COMPLETE**: Success status, iteration count, total duration
+- **ERROR**: Error messages with context information
+
+See [.github/instructions/logging.instructions.md](.github/instructions/logging.instructions.md) for detailed log analysis.
+
 ## Dependencies & Versions
 
 | Package | Purpose | Note |

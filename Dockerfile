@@ -28,3 +28,4 @@ ENTRYPOINT ["/bin/sh", "/entrypoint.sh"]
 # Running Commands
 # docker build -t debian-llamafile .
 # docker run -d -p 1111:1111 debian-llamafile
+# docker run -d --gpus all -p 11434:1111 debian-llamafile
