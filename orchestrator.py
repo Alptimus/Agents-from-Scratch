@@ -222,22 +222,11 @@ class BaseAgent(ABC):
         pass
 
     def _extract_tool_calls(self, response_text: str) -> List[Dict[str, Any]]:
-        """
-        Extract tool calls from LLM response.
-
-        The LLM is instructed to output JSON tool calls on separate lines.
-        Format expected: {"tool": "tool_name", "params": {"param1": "value1"}}
-
-        Args:
-            response_text: Raw response from LLM
-
-        Returns:
-            List of extracted tool calls
-        """
+        """Extract JSON tool calls from the model response."""
         tool_calls = []
         json_depth = 0
         json_start = -1
-        
+
         for i, char in enumerate(response_text):
             if char == '{':
                 if json_depth == 0:
@@ -246,8 +235,7 @@ class BaseAgent(ABC):
             elif char == '}':
                 json_depth -= 1
                 if json_depth == 0 and json_start >= 0:
-                    # Potential complete JSON block
-                    json_str = response_text[json_start:i+1]
+                    json_str = response_text[json_start:i + 1]
                     try:
                         tool_call = json.loads(json_str)
                         if "tool" in tool_call and "params" in tool_call:
@@ -255,37 +243,26 @@ class BaseAgent(ABC):
                     except (json.JSONDecodeError, ValueError):
                         pass
                     json_start = -1
-        
+
         return tool_calls
 
     def _execute_tool(self, tool_name: str, params: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Execute a tool and return its result.
-
-        Args:
-            tool_name: Name of the tool to execute
-            params: Parameters for the tool
-
-        Returns:
-            Tool execution result
-        """
+        """Execute a registered tool and return its result."""
         tool = get_tool_by_name(tool_name)
         if not tool:
             return {"success": False, "error": f"Tool not found: {tool_name}"}
-        
+
         try:
             fn = tool["fn"]
-            # Handle optional parameters
             params_to_pass = {}
             for param_name, param_value in params.items():
                 params_to_pass[param_name] = param_value
-            
-            result = fn(**params_to_pass)
-            return result
-        except TypeError as e:
-            return {"success": False, "error": f"Invalid parameters for {tool_name}: {str(e)}"}
-        except Exception as e:
-            return {"success": False, "error": f"Tool execution failed: {str(e)}"}
+
+            return fn(**params_to_pass)
+        except TypeError as exc:
+            return {"success": False, "error": f"Invalid parameters for {tool_name}: {str(exc)}"}
+        except Exception as exc:
+            return {"success": False, "error": f"Tool execution failed: {str(exc)}"}
 
     def execute_task(self, task_description: str) -> Dict[str, Any]:
         """

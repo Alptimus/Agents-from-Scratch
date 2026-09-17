@@ -125,7 +125,7 @@ Examples:
     args = parser.parse_args()
 
     # Keep verbose output on by default unless the user explicitly opts out.
-    verbose = not args.quiet
+    verbose =
     think = args.think
 
     # Load skill file if provided, and merge with task prompt if both given
