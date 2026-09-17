@@ -142,7 +142,7 @@ You are a helpful assistant that accomplishes tasks by using tools.
 AVAILABLE TOOLS:
 - read_file(file_path: str) → reads file contents
 - write_file(file_path: str, content: str) → writes file
-- execute_shell(command: str) → runs shell command
+- run_shell(command: str) → runs shell command
 - list_directory(dir_path: str) → lists directory
 
 When you need to use a tool, output JSON:

@@ -18,12 +18,12 @@ These are the guardrails most likely to reduce friction in this codebase:
 ## Project Architecture
 
 ```
-chat_gemini_latest.py  → Google Gemini API wrapper (embeddings, generation)
-tools.py               → Tool registry (file ops, shell commands, directory listing)
-orchestrator.py        → OllamaAgent & GeminiAgent classes (autonomous task execution)
-gemini_utils.py        → Gemini client initialization and API utilities
-main.py                → CLI entry point for task execution
-Dockerfile             → Llamafile container (Qwen 3.5 9B quantized model)
+legacy/chat_gemini_latest.py  → Legacy Gemini demo wrapper (embeddings, generation)
+tools.py                     → Tool registry (file ops, shell commands, directory listing)
+orchestrator.py              → OllamaAgent & GeminiAgent classes (autonomous task execution)
+gemini_utils.py              → Gemini client initialization and API utilities
+main.py                      → CLI entry point for task execution
+Dockerfile                   → Llamafile container (Qwen 3.5 9B quantized model)
 ```
 
 **Control Flow (Both Backends):**
@@ -73,7 +73,7 @@ print(agent.execute_task('Your task here'))"
 
 ### Run Gemini Module (Legacy)
 ```bash
-python chat_gemini_latest.py  # Demonstrates embeddings & generation
+python legacy/chat_gemini_latest.py  # Demonstrates embeddings & generation
 ```
 
 ## Code Conventions
@@ -82,7 +82,7 @@ python chat_gemini_latest.py  # Demonstrates embeddings & generation
 - **Definition**: Tools are dictionaries with `name`, `description`, `parameters` (JSON schema), and `fn` (callable)
 - **Registration**: All tools added to `TOOLS` list in [tools.py](tools.py)
 - **Response Format**: Tool functions return `{"success": bool, "result": <data> or "error": str}`
-- **Location**: Common tools: `execute_shell()`, `read_file()`, `write_file()`, `list_directory()` in [tools.py](tools.py)
+- **Location**: Common tools: `run_shell()`, `read_file()`, `write_file()`, `list_directory()` in [tools.py](tools.py)
 
 ### LLM Communication Patterns
 - **JSON Output**: Both agents parse single-line JSON from LLM: `{"tool": "<name>", "params": {...}}`
@@ -129,7 +129,7 @@ result = agent.execute_task("Your task here")
 | [orchestrator.py](orchestrator.py) | OllamaAgent & GeminiAgent classes | Adding agentic features, changing iteration logic, or supporting new backends |
 | [gemini_utils.py](gemini_utils.py) | Gemini client initialization & API utilities | Integrating new Gemini features or custom client setup |
 | [tools.py](tools.py) | Tool definitions & registry | Adding new capabilities (file, shell, API operations) |
-| [chat_gemini_latest.py](chat_gemini_latest.py) | Gemini API wrapper (legacy) | Integrating embeddings, token counting, or generation features |
+| [legacy/chat_gemini_latest.py](legacy/chat_gemini_latest.py) | Legacy Gemini demo wrapper | Integrating embeddings, token counting, or generation features |
 | [main.py](main.py) | CLI entry point | Execute tasks with command-line arguments |
 | [requirements.txt](requirements.txt) | Python dependencies | Adding packages or version pinning |
 | [Dockerfile](Dockerfile) | Container runtime | Updating LLM model, layer dependencies, or ports |
@@ -243,7 +243,7 @@ See [.github/instructions/logging.instructions.md](.github/instructions/logging.
 
 | Package | Purpose | Note |
 |---------|---------|------|
-| `google-genai` | Gemini API client | Used in [chat_gemini_latest.py](chat_gemini_latest.py) |
+| `google-genai` | Gemini API client | Used in [gemini_utils.py](gemini_utils.py) and the legacy demo in [legacy/chat_gemini_latest.py](legacy/chat_gemini_latest.py) |
 | `requests` | HTTP client for Ollama | Required for agent LLM communication |
 | `python-decouple` | Environment variable management | Loads `GOOGLE_API_KEY` safely |
 | `numpy` | Numerical operations | Used for embeddings |
