@@ -76,7 +76,7 @@ def print_table_relationships(database):
         print("No foreign key relationships found.")
 
 if __name__ == '__main__':
-    database = 'dbs/chinook.db'
+    database = 'databases/chinook.db'
 
     print_all_schemas(database)
     print_table_relationships(database)

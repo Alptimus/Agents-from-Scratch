@@ -18,6 +18,10 @@ try:
 except ImportError:  # pragma: no cover - optional dependency
     docx = None
 
+# Import new tool modules
+from sql_engine import execute_sql_query_impl
+from browser_automation import take_screenshot_impl
+
 
 def read_file(file_path: str) -> Dict[str, Any]:
     """Read the contents of a file."""
@@ -174,6 +178,47 @@ TOOLS = [
             }
         },
         "fn": read_docx_file
+    },
+    {
+        "name": "execute_sql_query",
+        "description": "Execute SQL query against SQLite database and return results. Supports parameterized queries.",
+        "parameters": {
+            "database": {
+                "type": "string",
+                "description": "Path to SQLite database file (.sqlite or .db)"
+            },
+            "query": {
+                "type": "string",
+                "description": "SQL query to execute (SELECT, INSERT, UPDATE, DELETE, etc.)"
+            },
+            "params": {
+                "type": "array",
+                "description": "Optional parameters for parameterized queries (e.g., [value1, value2])",
+                "optional": True
+            }
+        },
+        "fn": execute_sql_query_impl
+    },
+    {
+        "name": "take_screenshot",
+        "description": "Take a screenshot of a web page using headless browser. Useful for web research, data extraction, and visual validation.",
+        "parameters": {
+            "url": {
+                "type": "string",
+                "description": "URL to screenshot (e.g., https://example.com)"
+            },
+            "output_dir": {
+                "type": "string",
+                "description": "Directory to save screenshot (default: playwright_images)",
+                "optional": True
+            },
+            "timeout": {
+                "type": "integer",
+                "description": "Timeout in milliseconds for page load (default: 30000ms = 30 seconds)",
+                "optional": True
+            }
+        },
+        "fn": take_screenshot_impl
     }
 ]
 

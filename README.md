@@ -9,13 +9,19 @@ Agents-from-Scratch is a Python framework for running autonomous, tool-using tas
 | [main.py](main.py) | Command-line interface, task/skill input, provider validation, and result display |
 | [orchestrator.py](orchestrator.py) | `BaseAgent`, `OllamaAgent`, `GeminiAgent`, iteration loop, tool extraction, execution, and logging |
 | [tools.py](tools.py) | Built-in tool implementations and the `TOOLS` registry |
+| [sql_engine.py](sql_engine.py) | SQLite database query execution and schema introspection tool |
+| [sql_generator.py](sql_generator.py) | LLM prompt generation and response formatting for natural language SQL |
+| [browser_automation.py](browser_automation.py) | Playwright headless browser screenshot tool with URL sanitization |
+| [databases/](databases/) | Standardized SQLite database files (`us_salaries.sqlite`, `chinook.db`) |
 | [prompts.py](prompts.py) | Shared system, initial, and continuation prompts |
 | [gemini_utils.py](gemini_utils.py) | Optional Gemini client initialization and generation calls |
 | [skill_loader.py](skill_loader.py) | Markdown skill-file parsing for CLI task input |
+| [sql_agent/](sql_agent/) | SQL skill guide (`SKILL.md`), prompts, and legacy script archive |
+| [browser_automation/SKILL.md](browser_automation/SKILL.md) | Browser automation skill guide for agents |
 | [logger_config.py](logger_config.py) | Plaintext and JSON Lines execution logs |
-| [tests/](tests/) | Fast offline smoke tests |
+| [tests/](tests/) | Fast offline smoke and integration tests |
 | [legacy/chat_gemini_latest.py](legacy/chat_gemini_latest.py) | Isolated manual Gemini/embedding demo; not used by the active flow |
-| [playwright_mcp.py](playwright_mcp.py) | Separate manual Playwright screenshot utility |
+| [playwright_mcp.py](playwright_mcp.py) | Standalone manual Playwright utility |
 | [Dockerfile](Dockerfile) | Optional Llamafile container configuration |
 
 ## Requirements
@@ -144,8 +150,26 @@ The registry in [tools.py](tools.py) currently provides:
 - `list_directory`: list sorted entries in a directory.
 - `run_shell`: run a shell command with a 30-second timeout.
 - `read_docx_file`: extract paragraph text from a `.docx` file.
+- `execute_sql_query`: execute SQL queries against SQLite databases with schema introspection and parameter support.
+- `take_screenshot`: capture web pages using headless Playwright browser automation with automatic URL sanitization and configurable timeout.
 
-Every tool returns a dictionary with `success` and either result data or an `error`. The registry remains importable when `python-docx` is unavailable; using `read_docx_file` in that state returns an installation message.
+Every tool returns a consistent dictionary format with `success: bool` and either result fields (e.g., `result`, `content`, `screenshot_path`) or an actionable `error: str`.
+
+### SQL Tooling & Databases
+
+The SQL tool (`execute_sql_query`) is backend-agnostic and allows agents to execute queries against SQLite databases:
+- Standardized database folder: [databases/](databases/) contains `us_salaries.sqlite` and `chinook.db`.
+- Database paths are passed dynamically as parameters, supporting multi-database workflows.
+- Introspection helpers in [sql_engine.py](sql_engine.py) provide schema discovery (`PRAGMA table_info`) and foreign key mapping (`PRAGMA foreign_key_list`).
+- Operational patterns and safe querying steps are documented in [sql_agent/SKILL.md](sql_agent/SKILL.md).
+
+### Browser Automation Tool
+
+The browser tool (`take_screenshot`) provides headless browser capture backed by Playwright:
+- Implemented in [browser_automation.py](browser_automation.py) with automatic URL sanitization (strips special characters, handles query strings and fragments).
+- Graceful error handling: returns clear installation instructions if `playwright` is not installed, preventing orchestrator crashes.
+- Screenshots default to `playwright_images/` with configurable load timeouts.
+- Comprehensive usage patterns are documented in [browser_automation/SKILL.md](browser_automation/SKILL.md).
 
 ## Results and Errors
 
@@ -215,6 +239,7 @@ The container is a separate Ollama-compatible service experiment. The default `O
 ## Project Boundaries
 
 - [legacy/chat_gemini_latest.py](legacy/chat_gemini_latest.py) is a manual legacy demo and is not imported by the active CLI or orchestrator.
-- [playwright_mcp.py](playwright_mcp.py) is a standalone screenshot script, not an agent tool registered in `tools.py`.
+- [sql_agent/legacy/](sql_agent/legacy/) contains archived prototype scripts (`agent.py`, `agent_v2.py`), superseded by the `execute_sql_query` tool in [tools.py](tools.py).
+- [playwright_mcp.py](playwright_mcp.py) is an earlier standalone MCP script; headless browser automation is integrated into the agent tool registry via [browser_automation.py](browser_automation.py).
 - Files under `test_docs/`, `docx_reader/`, and `playwright images/` are examples or supporting artifacts, not required for the core agent flow.
 - No concurrency, streaming responses, automatic retries, or live integration tests are currently implemented.

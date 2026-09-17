@@ -60,6 +60,15 @@ GeminiAgent(
 
 `_extract_tool_calls()` expects JSON objects containing `tool` and `params`. `_execute_tool()` looks up the name through `get_tool_by_name()` and returns a standard `success` plus result-or-error dictionary. Keep the prompt format and parser synchronized when changing tool-call syntax.
 
+All tools adhere to a backend-agnostic return structure: `{"success": bool, "result": ..., "error": ...}`.
+Active domain tools include:
+- `execute_sql_query(database, query, params)`: Introspects and queries SQLite databases (`databases/us_salaries.sqlite`, `databases/chinook.db`).
+- `take_screenshot(url, output_dir, timeout)`: Captures web page state via Playwright headless browser automation.
+
+## Skills Integration
+
+Skills (such as `sql_agent/SKILL.md` and `browser_automation/SKILL.md`) provide domain-specific instructions, workflows, and tool parameters. `skill_loader.py` parses their YAML frontmatter and Markdown body to instruct agents on optimal usage patterns without altering core orchestrator logic.
+
 ## Error Behavior
 
 Connection checks fail before the first model call. Provider call failures return `None` and become `LLM call failed` task results. Tool lookup, parameter, and execution errors are returned to the model as tool results. The default maximum is 10 iterations.

@@ -57,8 +57,10 @@ The active tools are:
 - `list_directory(dir_path=".")`: returns sorted directory entries.
 - `run_shell(command)`: runs a shell command with a 30-second timeout.
 - `read_docx_file(file_path)`: reads paragraph text from a DOCX file.
+- `execute_sql_query(database, query, params=None)`: executes SQL queries against SQLite databases with schema introspection.
+- `take_screenshot(url, output_dir="playwright_images", timeout=30000)`: captures web pages via Playwright headless browser automation.
 
-`python-docx` is optional. Keep optional imports inside a guarded module-level import, leave the tool registered, and return an installation message when the dependent tool is called without the package. Optional packages must not prevent `tools.py` or the rest of the registry from importing.
+`python-docx` and `playwright` are optional dependencies. Keep optional imports inside guarded module-level imports, leave the tools registered, and return clear installation messages when dependent tools are called without the packages. Optional packages must not prevent `tools.py` or the rest of the registry from importing.
 
 ## Adding a Tool
 
