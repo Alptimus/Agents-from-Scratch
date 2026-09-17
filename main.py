@@ -105,14 +105,14 @@ Examples:
     parser.add_argument(
         "--verbose",
         action="store_true",
-        default=True,
-        help="Show agent iteration details (default: True for verbose output)",
+        default=False,
+        help="Show agent iteration details.",
     )
 
     parser.add_argument(
         "--quiet",
         action="store_true",
-        help="Suppress verbose output (same as not using --verbose)",
+        help="Suppress verbose output.",
     )
 
     parser.add_argument(
@@ -124,8 +124,8 @@ Examples:
 
     args = parser.parse_args()
 
-    # Set verbose flag based on arguments
-    verbose = args.verbose and not args.quiet
+    # Keep verbose output on by default unless the user explicitly opts out.
+    verbose = not args.quiet
     think = args.think
 
     # Load skill file if provided, and merge with task prompt if both given

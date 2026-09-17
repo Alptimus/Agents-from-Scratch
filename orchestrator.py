@@ -38,8 +38,21 @@ try:
         from .gemini_utils import get_gemini_client, call_gemini
     except (ImportError, ValueError):
         from gemini_utils import get_gemini_client, call_gemini
-except ImportError as e:
-    print(f"Warning: Could not import gemini_utils: {e}")
+except ImportError as exc:
+    get_gemini_client = None
+    call_gemini = None
+    GEMINI_IMPORT_ERROR = exc
+else:
+    GEMINI_IMPORT_ERROR = None
+
+
+def _require_gemini_support() -> None:
+    """Raise a clear error when Gemini support is unavailable."""
+    if get_gemini_client is None or call_gemini is None:
+        raise RuntimeError(
+            "Gemini support is unavailable. Install the project dependencies with: "
+            "pip install -r requirements.txt"
+        ) from GEMINI_IMPORT_ERROR
 
 
 class BaseAgent(ABC):
@@ -555,6 +568,7 @@ class GeminiAgent(BaseAgent):
             verbose: Whether to print reasoning and progress
             log_dir: Directory for storing logs
         """
+        _require_gemini_support()
         super().__init__(model, max_iterations, verbose, log_dir)
         self.api_key_name = api_key_name
         self.client = None
