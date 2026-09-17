@@ -19,9 +19,16 @@ Usage:
     python main.py "Analyze architecture" --provider ollama --think"""
 
 import argparse
+import os
 import sys
+
 import requests
-from decouple import config
+
+try:
+    from decouple import config
+except ImportError:  # pragma: no cover - fallback when dependency is absent
+    def config(name: str, default=None):
+        return os.environ.get(name, default)
 
 from orchestrator import OllamaAgent, GeminiAgent
 from skill_loader import load_skill_file
@@ -124,8 +131,8 @@ Examples:
 
     args = parser.parse_args()
 
-    # Keep verbose output on by default unless the user explicitly opts out.
-    verbose =
+    # Keep verbose output enabled by default unless the user explicitly opts out.
+    verbose = not args.quiet
     think = args.think
 
     # Load skill file if provided, and merge with task prompt if both given
