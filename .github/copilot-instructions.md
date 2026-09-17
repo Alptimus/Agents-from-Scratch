@@ -38,8 +38,8 @@ python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
-# Set up environment
-cp .env.example .env  # Add your GOOGLE_API_KEY
+# Set up environment (optional Gemini backend)
+export GOOGLE_API_KEY="your-key"
 ```
 
 ### Backend Option 1: Ollama (Local)
@@ -59,7 +59,7 @@ print(agent.execute_task('Your task here'))"
 ```bash
 docker build -t debian-llamafile .
 docker run -d -p 1111:1111 debian-llamafile
-# Then update OllamaAgent base_url to http://localhost:1111
+# Pass ollama_base_url="http://localhost:1111" when using the container endpoint
 ```
 
 ### Backend Option 2: Gemini (Cloud)
@@ -71,7 +71,7 @@ agent = GeminiAgent(model='gemini-2.5-flash'); \
 print(agent.execute_task('Your task here'))"
 ```
 
-### Run Gemini Module (Legacy)
+### Run Legacy Gemini Demo
 ```bash
 python legacy/chat_gemini_latest.py  # Demonstrates embeddings & generation
 ```
@@ -142,7 +142,7 @@ For specific development tasks, refer to these focused instruction files:
 |------|------------------|----------|
 | **Adding new tools** | [.github/instructions/tools.instructions.md](.github/instructions/tools.instructions.md) | Tool design patterns, response format, error handling, tool discovery, adding tools to registry |
 | **Understanding logs** | [.github/instructions/logging.instructions.md](.github/instructions/logging.instructions.md) | Dual plaintext + JSON Lines logging, event types, performance analysis, debugging logs |
-| **Writing tests** | [.github/instructions/testing.instructions.md](.github/instructions/testing.instructions.md) | Unit tests, mocking, integration tests, pytest setup, CI/CD patterns, coverage targets |
+| **Writing tests** | [.github/instructions/testing.instructions.md](.github/instructions/testing.instructions.md) | Offline unittest smoke tests, mocking, and agent/tool coverage |
 | **Agent implementation** | [.github/instructions/orchestrator.instructions.md](.github/instructions/orchestrator.instructions.md) | Modifying agent behavior, adding backends, debugging iteration loops |
 
 ## Common Tasks
@@ -243,10 +243,12 @@ See [.github/instructions/logging.instructions.md](.github/instructions/logging.
 
 | Package | Purpose | Note |
 |---------|---------|------|
-| `google-genai` | Gemini API client | Used in [gemini_utils.py](gemini_utils.py) and the legacy demo in [legacy/chat_gemini_latest.py](legacy/chat_gemini_latest.py) |
+| `google-genai` | Gemini API client | Optional at import time; required for live Gemini execution |
 | `requests` | HTTP client for Ollama | Required for agent LLM communication |
 | `python-decouple` | Environment variable management | Loads `GOOGLE_API_KEY` safely |
-| `numpy` | Numerical operations | Used for embeddings |
+| `numpy` | Numerical operations | Used for embeddings in the legacy demo |
+| `python-docx` | DOCX parsing | Optional; required only by `read_docx_file` |
+| `playwright` | Browser screenshots | Optional; required only by standalone `playwright_mcp.py` |
 
 See [requirements.txt](requirements.txt) for exact versions.
 

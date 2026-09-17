@@ -6,181 +6,72 @@ description: |
 applyTo: "**/higher_end/orchestrator.py"
 ---
 
-# Orchestrator Agent Implementation Guide
+# Orchestrator Implementation Guide
 
-This file contains the core `OllamaAgent` and `GeminiAgent` classes that implement autonomous task execution with tool calling.
+`orchestrator.py` contains the shared `BaseAgent` loop and the two active provider implementations: `OllamaAgent` and `GeminiAgent`.
 
-## Architecture Overview
+## Shared Loop
 
-### Agent Loop Flow
+`BaseAgent.execute_task()` owns all provider-independent behavior:
 
-Both `OllamaAgent` and `GeminiAgent` follow the same execution pattern:
+1. Set up plaintext and JSON Lines logging.
+2. Check the backend through `_check_connection()`.
+3. Build prompts using `prompts.py` and the current `TOOLS` registry.
+4. Call `_call_llm()`.
+5. Extract JSON tool calls with `_extract_tool_calls()`.
+6. Execute calls through `_execute_tool()`.
+7. Build a continuation prompt with tool results.
+8. Stop on a no-tool response, an LLM failure, or `max_iterations`.
 
-```
-1. Check Backend Connection (Ollama/Gemini)
-   ↓
-2. Enter Iteration Loop (max 10 iterations)
-   ├─ Call LLM with task + conversation history
-   ├─ Parse JSON tool calls from response
-   ├─ If no tools: task complete → return result
-   ├─ If tools found: execute each tool
-   ├─ Collect results, feed back to LLM
-   └─ Next iteration
-   ↓
-3. Return final result or "max iterations reached"
-```
+Do not duplicate this loop in a provider subclass. Provider classes should only implement connection details, model calls, and provider metadata.
 
-### Key Methods (Shared Between Both Agents)
+## Backend Hooks
 
-| Method | Purpose |
-|--------|---------|
-| `_extract_tool_calls(response_text)` | Parse JSON `{"tool": "name", "params": {...}}` from LLM response |
-| `_execute_tool(tool_name, params)` | Look up tool in `TOOLS` registry, call it, return result |
-| `execute_task(task_description)` | Main public entry point; runs iteration loop until complete |
+Every `BaseAgent` subclass must implement:
 
-### Backend-Specific Methods
+- `_get_backend_name()`
+- `_check_connection()`
+- `_get_connection_error_msg()`
+- `_call_llm(prompt)`
+- `_get_backend_connection_info()`
 
-**OllamaAgent:**
-- `_check_ollama_connection()` — Ping Ollama at configured base_url
-- `_call_ollama(prompt)` — POST to `/api/generate` endpoint; parse JSON response
+Keep the public constructor shape of existing agents compatible:
 
-**GeminiAgent:**
-- `_check_gemini_connection()` — Initialize Gemini client; validate API key
-- `_call_gemini(prompt)` — Call `gemini_utils.call_gemini()`; return text response
-
-## When to Modify Orchestrator
-
-### Adding a New Backend (e.g., Claude, Local Model)
-
-1. **Create a new Agent class** (e.g., `ClaudeAgent`)
-2. **Implement required methods**:
-   - `__init__()` — Store backend-specific config
-   - `_check_connection()` — Validate backend availability
-   - `_call_llm(prompt)` — API call; return text response
-   - `_extract_tool_calls()` — **Reuse from OllamaAgent** (identical)
-   - `_execute_tool()` — **Reuse from OllamaAgent** (identical)
-   - `execute_task()` — **Mostly reuse iteration loop** (only `_call_llm()` call differs)
-3. **Add to imports** in `.github/copilot-instructions.md`
-
-### Modifying Tool Extraction Logic
-
-The JSON parsing in `_extract_tool_calls()` handles:
-- Multiple tool calls in one response
-- JSON blocks nested in text
-- Malformed JSON (gracefully skipped)
-
-**Do NOT change** this method unless you change the system prompt or LLM instruction format. Both agents share this logic intentionally for consistency.
-
-### Changing Iteration Behavior
-
-To modify max iterations, timeout, or feedback loops:
-1. Edit `__init__()` parameters (e.g., add `timeout`, `retry_policy`)
-2. Update iteration loop logic in `execute_task()`
-3. **Apply to both agents** to keep parity
-
-### Debugging Tool Calls
-
-**Enable verbose output:**
 ```python
-agent = GeminiAgent(verbose=True)
-result = agent.execute_task("Your task")
+OllamaAgent(
+    ollama_base_url="http://localhost:11434",
+    model="mistral",
+    max_iterations=10,
+    verbose=True,
+    log_dir="logs",
+    think=False,
+)
+
+GeminiAgent(
+    api_key_name="GOOGLE_API_KEY",
+    model="gemini-2.5-flash",
+    max_iterations=10,
+    verbose=True,
+    log_dir="logs",
+)
 ```
 
-**Read conversation history:**
-```python
-result = agent.execute_task("task")
-if not result["success"]:
-    for iteration in result["conversation"]:
-        print(f"Iter {iteration['iteration']}: {iteration.get('tool_calls', 'no tools')}")
+## Tool Contract
+
+`_extract_tool_calls()` expects JSON objects containing `tool` and `params`. `_execute_tool()` looks up the name through `get_tool_by_name()` and returns a standard `success` plus result-or-error dictionary. Keep the prompt format and parser synchronized when changing tool-call syntax.
+
+## Error Behavior
+
+Connection checks fail before the first model call. Provider call failures return `None` and become `LLM call failed` task results. Tool lookup, parameter, and execution errors are returned to the model as tool results. The default maximum is 10 iterations.
+
+Gemini support is optional at import time. `orchestrator.py` must remain importable when `google-genai` is unavailable; `GeminiAgent` should fail clearly when Gemini support is actually requested. Ollama requires `requests` and a reachable compatible endpoint.
+
+## Testing Changes
+
+Use a fake `BaseAgent` subclass for shared-loop tests. Avoid external services. Before claiming a change works, run:
+
+```bash
+python3 -m unittest discover -s tests -v
 ```
 
-## Code Patterns to Maintain
-
-### Consistent Property Initialization
-
-Both agents follow this pattern in `__init__()`:
-```python
-self.param_name = param  # Store all config params
-self.verbose = verbose
-```
-
-### Consistent Tool Execution
-
-Both agents use identical `_execute_tool()`:
-```python
-fn = tool["fn"]
-params_to_pass = {name: value for name, value in params.items()}
-result = fn(**params_to_pass)
-return result  # Always: {"success": bool, "error": str} or {"success": true, "result": data}
-```
-
-### Consistent Error Handling
-
-All LLM calls follow:
-```python
-try:
-    response = _call_llm(prompt)
-    if not response:
-        return {"success": False, "error": "..."}
-except Exception as e:
-    if self.verbose:
-        print(f"[ERROR] {str(e)}")
-    return None
-```
-
-## Testing Checklist
-
-Before committing changes:
-- [ ] Both agents initialize without errors
-- [ ] Tool extraction correctly parses multiple JSON calls
-- [ ] Tool execution returns proper `{"success": bool, ...}` format
-- [ ] Iteration loop stops at max_iterations
-- [ ] Conversation history tracks all iterations
-- [ ] Verbose output logs each step clearly
-- [ ] Backward compatibility: `OllamaAgent` works unchanged
-
-## Common Mistakes
-
-### ❌ Changing `_extract_tool_calls()` without updating system prompt
-The JSON parsing is tightly coupled to LLM instructions. If you change tool format (e.g., "output as XML"), update **both** together.
-
-### ❌ Not initializing `self.client` in `_check_connection()`
-GeminiAgent lazily initializes the client on first connection check. Don't initialize in `__init__()` to avoid API calls during setup.
-
-### ❌ Not applying changes to both agents
-If you fix a bug in one agent's iteration loop, apply it to the other for consistency.
-
-### ❌ Assuming non-verbose mode is silent
-Both agents still run full iterations in non-verbose mode; verbose just suppresses `print()` statements.
-
-## Integration Points
-
-### With `tools.py`
-- Calls `format_tool_descriptions()` to build system prompt
-- Calls `get_tool_by_name(tool_name)` to look up tools
-- Expects `TOOLS` list with `name`, `description`, `parameters`, `fn`
-
-### With `gemini_utils.py` (GeminiAgent only)
-- Calls `get_gemini_client(api_key_name)` to initialize
-- Calls `call_gemini(client, prompt, model)` to invoke API
-
-### With `.env`
-- `OllamaAgent`: Uses `ollama_base_url` parameter (no env lookup)
-- `GeminiAgent`: Looks up `api_key_name` env var via `python-decouple`
-
-## Performance & Scaling
-
-### Current Limitations
-- **Single-threaded**: Iteration loop is sequential; one LLM call at a time
-- **No tool parallelism**: Tools execute one-by-one (even if independent)
-- **No streaming**: LLM response must complete before tool extraction
-
-### Future Optimization Options
-1. **Parallel tool execution**: `asyncio` for independent tool calls within one iteration
-2. **Streaming response handling**: Extract and execute tools as LLM streams response
-3. **Auto-retry on tool failure**: Add `retry_on_error=True` parameter
-4. **Token usage tracking**: Return token metrics from `execute_task()`
-
----
-
-**See also:** [copilot-instructions.md](../../.github/copilot-instructions.md) for high-level usage guide.
+When changing provider behavior, test both the success path and its connection or dependency failure path. Preserve conversation history, logging events, and result keys unless the API change is intentional and documented.

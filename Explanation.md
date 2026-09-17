@@ -1,566 +1,148 @@
-# Orchestrator.py - Complete Step-by-Step Explanation
+# Architecture Explanation
 
-## Overview
+This document explains the active execution path in Agents-from-Scratch. For installation and command examples, see [README.md](README.md).
 
-`orchestrator.py` contains two agent classes that autonomously execute tasks by orchestrating tool calls and LLM reasoning:
-- **`OllamaAgent`** — Uses a local LLM (Ollama)
-- **`GeminiAgent`** — Uses Google's Gemini API (cloud-based)
+## System Overview
 
-Both agents follow the **same core loop pattern**: take a task → call LLM → extract tool calls → execute tools → feed results back → repeat until complete.
+The project is a synchronous Python agent framework with two interchangeable model providers:
 
----
+- `OllamaAgent` sends prompts to an Ollama-compatible HTTP endpoint.
+- `GeminiAgent` sends prompts through the optional Google Gemini SDK.
 
-## Architecture Flow
+Both providers inherit the same orchestration behavior from `BaseAgent`. Only connection checks and model calls are backend-specific.
 
-```
-User Task
-    ↓
-Initialize Agent (OllamaAgent or GeminiAgent)
-    ↓
-execute_task(task_description)
-    ├─ Step 1: Check backend connection
-    ├─ Step 2: Prepare system prompt + tools list
-    ├─ Step 3: Enter iteration loop (max 10 cycles)
-    │   ├─ Call LLM with task + history
-    │   ├─ Parse JSON tool calls from response
-    │   ├─ If no tools → task complete, return result
-    │   ├─ If tools found → execute each tool
-    │   ├─ Collect results, feed back to LLM
-    │   └─ Loop to next iteration
-    └─ Return final result + conversation history
+```text
+CLI or Python caller
+        |
+        v
+  OllamaAgent / GeminiAgent
+        |
+        v
+  BaseAgent.execute_task()
+        |
+        +--> prompts.py: build prompts
+        +--> tools.py: describe, find, and execute tools
+        +--> model backend: generate response
+        +--> logger_config.py: write execution trace
 ```
 
----
+## Active Modules
 
-## Detailed Component Breakdown
+| Module | Role |
+| --- | --- |
+| `main.py` | Parses CLI arguments, loads optional skills, validates the selected provider, runs an agent, and maps results to exit codes. |
+| `orchestrator.py` | Owns the shared task loop and provider implementations. |
+| `prompts.py` | Defines the common system, initial, and continuation prompts. |
+| `tools.py` | Defines the callable tools and the registry exposed to the model. |
+| `gemini_utils.py` | Lazily depends on `google-genai`; creates clients and sends Gemini requests. |
+| `skill_loader.py` | Parses Markdown skill files and returns task metadata. |
+| `logger_config.py` | Creates paired plaintext and JSON Lines log handlers. |
+| `tests/` | Verifies imports, optional dependency behavior, CLI validation, and backend-independent loop behavior without external services. |
 
-### 1. Class Initialization
+`legacy/chat_gemini_latest.py` and `playwright_mcp.py` are separate manual utilities. Neither is imported by the active agent flow.
 
-#### OllamaAgent.__init__()
-```python
-OllamaAgent(
-    ollama_base_url="http://localhost:11434",  # Ollama server location
-    model="mistral",                           # LLM model name
-    max_iterations=10,                         # Safety limit on loops
-    verbose=True                               # Print debug output
-)
-```
+## Agent Abstraction
 
-**What it does:**
-- Stores Ollama endpoint and model name
-- Constructs the API URL: `http://localhost:11434/api/generate`
-- Sets iteration limit to prevent infinite loops
-- Enables/disables debug printing
+`BaseAgent` defines the shared public and protected behavior:
 
-#### GeminiAgent.__init__()
-```python
-GeminiAgent(
-    api_key_name="GOOGLE_API_KEY",    # Environment variable for API key
-    model="gemini-2.5-flash",         # Gemini model version
-    max_iterations=10,                # Safety limit on loops
-    verbose=True                      # Print debug output
-)
-```
+- `execute_task(task_description)` runs the complete task lifecycle.
+- `_extract_tool_calls(response_text)` extracts one or more JSON tool calls.
+- `_execute_tool(tool_name, params)` resolves a tool in the registry and invokes it.
+- `_setup_logging()` and the `_log_*` methods record execution details.
+- `_check_connection()`, `_get_connection_error_msg()`, `_call_llm()`, `_get_backend_name()`, and `_get_backend_connection_info()` are abstract backend hooks.
 
-**What it does:**
-- Stores API key environment variable name
-- Stores model selection
-- Sets iteration limit
-- Client is initialized lazily in `_check_gemini_connection()`
+`OllamaAgent` adds `ollama_base_url`, `api_url`, and `think`. `GeminiAgent` adds `api_key_name` and lazily stores its client after a successful connection check. Their constructors retain the same configuration shape used by the CLI and Python examples.
 
----
+## Task Lifecycle
 
-### 2. Connection Validation (Pre-Execution)
+`BaseAgent.execute_task()` follows this sequence:
 
-#### OllamaAgent._check_ollama_connection()
-```
-1. Send GET request to http://localhost:11434/api/tags
-2. Check if response status is 200 (HTTP OK)
-3. Return True/False (success/failure)
-4. If fails → Ollama service isn't running or unreachable
-```
+1. Create the configured log files.
+2. Check the provider connection.
+3. Format the current `TOOLS` registry into the system prompt.
+4. Build the initial prompt from the system prompt and task description.
+5. Call the provider through `_call_llm()`.
+6. Add the model response to conversation history.
+7. Extract JSON objects containing `tool` and `params`.
+8. If no calls are found, return a successful result.
+9. Execute every extracted call and attach results to the current history item.
+10. Build a continuation prompt containing the prior response and JSON tool results.
+11. Continue until completion, an LLM failure, or `max_iterations` is reached.
 
-**Why it matters:**
-- Fails fast before wasting iterations
-- Error message tells user to run `ollama serve`
+The default iteration limit is 10. The limit is a safety boundary, not a guarantee that a task needs 10 model calls.
 
-#### GeminiAgent._check_gemini_connection()
-```
-1. Call get_gemini_client(api_key_name)
-   - Loads API key from environment
-   - Initializes Google Gemini client
-2. Store client reference
-3. Return True if successful, False if API key missing or invalid
-```
+## Prompt Contract
 
-**Why it matters:**
-- Validates credentials before making expensive API calls
-- Prevents rate-limit waste on bad keys
+`prompts.py` gives the model the available tool descriptions and requires calls in this shape:
 
----
-
-### 3. Main Execution Loop: execute_task()
-
-This is the **core orchestration logic** that runs for both agents (with backend-specific differences).
-
-#### Step 3.1: Pre-Loop Setup
-
-```python
-# Check backend is available
-if not self._check_*_connection():
-    return {"success": False, "error": "..."}
-
-# Initialize empty conversation history (tracks all iterations)
-conversation_history = []
-
-# Get formatted list of available tools from tools.py
-tool_descriptions = format_tool_descriptions()
-```
-
-**Purpose:**
-- Ensure backend is ready
-- Set up tracking for multi-turn conversation
-- Make tools known to the LLM
-
-#### Step 3.2: Craft System Prompt
-
-```
-System Prompt = [Preamble] + [Tool Descriptions] + [Instructions]
-
-The prompt tells the LLM:
-1. "You're an assistant that uses tools to complete tasks"
-2. Here are the available tools: [list]
-3. Format tool calls as: {"tool": "name", "params": {...}}
-4. You can call multiple tools per response
-5. Summarize what you did when complete
-```
-
-**Example:**
-```
-You are a helpful assistant that accomplishes tasks by using tools.
-
-AVAILABLE TOOLS:
-- read_file(file_path: str) → reads file contents
-- write_file(file_path: str, content: str) → writes file
-- run_shell(command: str) → runs shell command
-- list_directory(dir_path: str) → lists directory
-
-When you need to use a tool, output JSON:
-{"tool": "tool_name", "params": {"param1": "value1"}}
-```
-
-#### Step 3.3: Initial Prompt Construction
-
-```python
-initial_prompt = [system_prompt] + [TASK: user's request]
-```
-
-#### Step 3.4: Enter Iteration Loop
-
-```
-FOR iteration = 1 TO max_iterations:
-    Step A: Call LLM
-    Step B: Parse tool calls
-    Step C: Decide: tools found or not?
-    Step D: If tools → execute and loop back
-    Step E: If no tools → task complete
-```
-
----
-
-### 4. LLM Communication (Per Iteration)
-
-#### Step 4.1: Call Backend LLM
-
-**For OllamaAgent (_call_ollama):**
-```
-POST http://localhost:11434/api/generate
-{
-    "model": "mistral",
-    "prompt": [current_prompt],
-    "stream": false
-}
-
-←─ Returns:
-{
-    "response": "Let me start by reading the config file...\n{\"tool\": \"read_file\", \"params\": {\"file_path\": \"config.json\"}}"
-}
-```
-
-**For GeminiAgent (_call_gemini):**
-```
-POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent
-{
-    "contents": [{"parts": [{"text": [current_prompt]}]}],
-    "generationConfig": {...}
-}
-
-←─ Returns:
-{
-    "candidates": [{
-        "content": {
-            "parts": [{
-                "text": "Let me start by reading the config file...\n{\"tool\": \"read_file\", \"params\": {\"file_path\": \"config.json\"}}"
-            }]
-        }
-    }]
-}
-```
-
-**Error Handling:**
-- Timeout (60 seconds) → return None
-- Connection error → return None
-- Bad status code → return None
-
-#### Step 4.2: Add Response to History
-
-```python
-conversation_history.append({
-    "iteration": 1,
-    "agent_response": "[LLM's full response text]"
-})
-```
-
----
-
-### 5. Tool Call Extraction: _extract_tool_calls()
-
-The LLM response contains natural language **plus** JSON tool calls. This method extracts them.
-
-#### Algorithm: Character-by-Character JSON Parsing
-
-```
-Scan through response character by character:
-
-WHEN see '{':
-  ├─ If not already in JSON block → mark as start
-  └─ Increment nesting depth
-
-WHEN see '}':
-  ├─ Decrement nesting depth
-  ├─ If nesting reaches 0 → potentially complete JSON block
-  └─ Try to parse as JSON
-       ├─ If valid JSON with "tool" + "params" keys → ADD TO RESULTS
-       └─ If invalid JSON → SKIP
-
-RETURN list of valid tool calls
-```
-
-#### Example Input/Output
-
-**Input (LLM response):**
-```
-I'll start by reading the configuration file to understand the structure.
-
-{"tool": "read_file", "params": {"file_path": "config.json"}}
-
-Once I have that, I'll check the format and make modifications...
-
-{"tool": "write_file", "params": {"file_path": "config.json", "content": "..."}}
-```
-
-**Output (extracted tool_calls):**
-```python
-[
-    {"tool": "read_file", "params": {"file_path": "config.json"}},
-    {"tool": "write_file", "params": {"file_path": "config.json", "content": "..."}}
-]
-```
-
----
-
-### 6. Tool Execution: _execute_tool()
-
-For each tool call, execute it and capture the result.
-
-#### Process
-
-```
-1. Look up tool in TOOLS registry (from tools.py)
-   └─ If not found → return {"success": false, "error": "..."}
-
-2. Get the function reference: fn = tool["fn"]
-
-3. Build parameters dict from parsed params
-
-4. Call the function: result = fn(**params_to_pass)
-
-5. Return result (must follow {"success": bool, "result"/"error": ...} format)
-```
-
-#### Example
-
-**Tool Call:**
 ```json
-{"tool": "read_file", "params": {"file_path": "config.json"}}
+{"tool": "tool_name", "params": {"parameter": "value"}}
 ```
 
-**Execution:**
-```python
-tool = get_tool_by_name("read_file")
-result = tool["fn"](file_path="config.json")
-# → {"success": true, "content": "{ \"timeout\": 30 }"}
-```
+Multiple objects may appear in one response. The extractor scans balanced JSON objects and ignores malformed objects or JSON objects without both required keys. After tool execution, the continuation prompt includes:
 
-#### Error Handling
+- the original task,
+- the previous model response, and
+- a JSON summary containing each tool name, parameters, and result.
 
-```
-Try:
-  Execute tool function with params
-Catch TypeError:
-  → Invalid parameters → return error
-Catch Exception:
-  → Tool execution failed → return error
-```
+The model completes the task by returning a response with no tool-call objects.
 
----
+## Tool Registry
 
-### 7. Decision Point: Complete or Loop?
-
-After executing tools and collecting results:
-
-```
-IF no tool_calls extracted from LLM response:
-    ├─ LLM did not call any tools
-    ├─ This means task is complete
-    └─ RETURN success with result
-
-ELSE:
-    ├─ Tools were called
-    ├─ Add tool results to conversation history
-    ├─ Build new prompt with results
-    └─ LOOP BACK to next iteration
-```
-
-#### History Update
+A registered tool is a dictionary with:
 
 ```python
-conversation_history[-1]["tool_calls"] = [
-    {
-        "tool": "read_file",
-        "params": {"file_path": "config.json"},
-        "result": {"success": true, "content": "..."}
-    }
-]
-```
-
----
-
-### 8. Next Iteration Prompt Construction
-
-When looping back, the LLM gets enriched context:
-
-```python
-next_prompt = [system_prompt] + [
-    TASK: [original task]
-    Previous response: [LLM's last reasoning]
-    Tool execution results: [JSON of all results from this iteration]
-    Based on these results, what's the next step?
-]
-```
-
-**Example:**
-```
-TASK: Write a summary of config.json
-
-Previous response:
-I'll read config.json first.
-{"tool": "read_file", "params": {"file_path": "config.json"}}
-
-Tool execution results:
-[
-  {
-    "tool": "read_file",
-    "params": {"file_path": "config.json"},
-    "result": {
-      "success": true,
-      "content": "{ \"timeout\": 30, \"max_retries\": 3 }"
-    }
-  }
-]
-
-Based on these results, what's the next step?
-```
-
-The LLM then says: "Great! I have the config. Let me write the summary..." and calls `write_file` or simply completes the task.
-
----
-
-### 9. Loop Termination
-
-The loop exits in **three scenarios:**
-
-#### Scenario A: Task Complete (Success)
-```
-LLM response contains no tool calls
-→ Return {"success": true, "result": last_llm_response}
-```
-
-#### Scenario B: Max Iterations Reached (Failure)
-```
-iteration >= max_iterations (default 10)
-→ Return {
-    "success": false,
-    "error": "Max iterations reached without completion",
-    "last_response": last_llm_response
-  }
-```
-
-#### Scenario C: LLM Call Failed (Error)
-```
-_call_ollama() or _call_gemini() returns None
-→ Return {"success": false, "error": "LLM call failed"}
-```
-
----
-
-## Complete Execution Timeline Example
-
-### Task: "Count Python files in the src directory"
-
-#### Iteration 1
-```
-Initial Prompt: "TASK: Count Python files in the src directory"
-
-[Agent calls Ollama/Gemini]
-
-LLM Response:
-"I'll list the src directory to see what files are there.
-{"tool": "list_directory", "params": {"dir_path": "src"}}"
-
-Tool Extraction:
-→ Found 1 tool: list_directory(dir_path="src")
-
-Tool Execution:
-→ result = {"success": true, "files": ["main.py", "utils.py", "helpers.py", "__init__.py"]}
-
-Decision: Tools were called → LOOP
-
-History Update:
-conversation_history[0]["tool_calls"] = [
-  {
-    "tool": "list_directory",
-    "params": {"dir_path": "src"},
-    "result": {"success": true, "files": ["main.py", "utils.py", "helpers.py", "__init__.py"]}
-  }
-]
-```
-
-#### Iteration 2
-```
-Next Prompt: "TASK: ... [Previous response shown] ... Tool results: [listed files] ... What next?"
-
-[Agent calls Ollama/Gemini]
-
-LLM Response:
-"Perfect! I found 4 Python files in src: main.py, utils.py, helpers.py, and __init__.py. The count is 4."
-
-Tool Extraction:
-→ Found 0 tools → Task is complete!
-
-Decision: No tools called → RETURN SUCCESS
-
-Final Result:
 {
-  "success": true,
-  "result": "Perfect! I found 4 Python files in src: main.py, utils.py, helpers.py, and __init__.py. The count is 4.",
-  "iterations": 2,
-  "conversation": [
-    {
-      "iteration": 1,
-      "agent_response": "...",
-      "tool_calls": [...]
-    },
-    {
-      "iteration": 2,
-      "agent_response": "...",
-      "tool_calls": []  // Empty means task complete
-    }
-  ]
+    "name": "tool_name",
+    "description": "What the tool does",
+    "parameters": {...},
+    "fn": callable,
 }
 ```
 
----
+The active registry contains:
 
-## Key Design Principles
+- `read_file(file_path)`
+- `write_file(file_path, content)`
+- `list_directory(dir_path=".")`
+- `run_shell(command)` with a 30-second timeout
+- `read_docx_file(file_path)`
 
-### 1. Backend Abstraction
-Both `OllamaAgent` and `GeminiAgent` share:
-- Same `_extract_tool_calls()` method
-- Same `_execute_tool()` method
-- Same `execute_task()` loop logic
+Tool handlers return dictionaries with `success` and either result data or `error`. Unknown tools, invalid parameters, and raised tool exceptions are converted into failed tool results so the model can see the failure.
 
-Only the LLM communication differs (`_call_ollama()` vs `_call_gemini()`).
+`python-docx` is optional. `tools.py` keeps the registry importable when the package is absent, and `read_docx_file()` returns an installation instruction only when that tool is used.
 
-### 2. Tool Agnosticism
-The agent doesn't hard-code tools. It:
-1. Reads available tools from `tools.py` via `format_tool_descriptions()`
-2. Uses tool registry to look up by name
-3. Calls any tool registered in the `TOOLS` list
+## Provider Behavior
 
-Adding a new tool requires no changes to `orchestrator.py`.
+### Ollama
 
-### 3. Iterative Refinement
-The agent:
-- Sees task
-- Plans steps
-- Executes tools
-- **Learns from results** (feeds them back)
-- Adjusts strategy
-- Repeats
+`OllamaAgent._check_connection()` sends a five-second GET request to `<ollama_base_url>/api/tags`. `_call_llm()` sends a non-streaming POST request to `<ollama_base_url>/api/generate` with:
 
-This is more robust than single-shot execution.
+```json
+{
+  "model": "mistral",
+  "prompt": "...",
+  "stream": false,
+  "think": false
+}
+```
 
-### 4. Safety Limits
-- Max 10 iterations to prevent infinite loops
-- Timeout on LLM calls (60 seconds)
-- Graceful error handling throughout
+The default endpoint is `http://localhost:11434`. Missing `requests` is handled as a clear dependency failure rather than an import-time crash.
 
-### 5. Full Transparency
-- Verbose mode logs every step
-- Conversation history tracks all iterations
-- Easy to replay and debug
+### Gemini
 
----
+`gemini_utils.py` treats `google-genai` as an optional import. The active modules can be imported without it, while `get_gemini_client()` and `call_gemini()` raise an actionable installation error when the SDK is unavailable. `get_gemini_client()` reads the configured API-key variable and rejects missing or blank values.
 
-## Code Structure
+`GeminiAgent._check_connection()` initializes the client lazily. `_call_llm()` delegates generation to `call_gemini()` and returns the response text.
 
-### Class Methods Summary
+## Result Contract
 
-| Method | Purpose | Used By |
-|--------|---------|---------|
-| `__init__()` | Store config, setup agent | User |
-| `_check_*_connection()` | Validate backend available | `execute_task()` start |
-| `_call_*()` | Make API call to LLM | Iteration loop |
-| `_extract_tool_calls()` | Parse JSON from response | After LLM call |
-| `_execute_tool()` | Run a single tool | For each tool call |
-| `execute_task()` | Main public entry point | User |
+A successful task returns the final model response and history:
 
-### Shared Components
-
-**Between Both Agents:**
-- System prompt format
-- Tool call JSON format
-- Iteration loop logic
-- Tool execution logic
-- Result format
-
-**Different:**
-- LLM backend (Ollama HTTP vs Gemini gRPC)
-- Connection validation
-- Configuration (base URL vs API key)
-
----
-
-## Return Value Structure
-
-All methods return dictionaries following this pattern:
-
-### Success (Task Complete)
 ```python
 {
     "success": True,
-    "result": "...",  # LLM's final output
+    "result": "final response",
     "iterations": 2,
     "conversation": [
         {
@@ -568,130 +150,93 @@ All methods return dictionaries following this pattern:
             "agent_response": "...",
             "tool_calls": [
                 {
-                    "tool": "name",
-                    "params": {...},
-                    "result": {"success": true, "...": "..."}
+                    "tool": "read_file",
+                    "params": {"file_path": "README.md"},
+                    "result": {"success": True, "content": "..."},
                 }
-            ]
+            ],
         },
-        {
-            "iteration": 2,
-            "agent_response": "...",
-            "tool_calls": []  # Empty = task complete
-        }
-    ]
+        {"iteration": 2, "agent_response": "Task complete."},
+    ],
 }
 ```
 
-### Failure (Backend Error)
-```python
-{
-    "success": False,
-    "error": "Ollama not running on http://localhost:11434. Start it with: ollama serve"
-}
+Failure results use `success: False` and normally include `error`. Backend connection failures stop before the first model call. Empty model responses return `LLM call failed`. Exhausting the iteration limit includes `last_response` and the accumulated conversation.
+
+## CLI Flow
+
+`main.py` supports either a positional task, a `--skill` Markdown file, or both. When both are supplied, the parsed skill description is primary and the positional task is appended as additional instructions.
+
+Before creating an agent, the CLI:
+
+1. Selects the default model for the provider if none was supplied.
+2. Checks Ollama reachability or validates a nonblank Gemini API key.
+3. Instantiates the selected agent.
+4. Executes the task and prints the result.
+
+The default provider is Gemini. Use `--provider ollama` for local execution. `--quiet` suppresses progress output; otherwise the CLI is verbose by default. `--think` is forwarded only to `OllamaAgent`.
+
+## Logging
+
+Each task creates:
+
+- `logs/agent_YYYYMMDD_HHMMSS.log`
+- `logs/agent_YYYYMMDD_HHMMSS.jsonl`
+
+The plaintext file contains readable previews. The JSON Lines file contains one event object per line and may include full prompt, response, tool-result, and conversation text. Events emitted by the orchestrator include:
+
+- `LOG_INIT`
+- `TASK_INIT`
+- `ITERATION_START`
+- `LLM_CALL`
+- `TOOL_EXTRACTION`
+- `TOOL_EXECUTION`
+- `TASK_COMPLETE`
+- `CONVERSATION_EXPORT`
+- `ERROR`
+
+Use the JSON Lines file for scripts and the plaintext file for quick inspection. Generated logs are runtime artifacts and should not be committed.
+
+## Skill Files
+
+`skill_loader.load_skill_file()` accepts a Markdown path. It supports simple YAML-like frontmatter between `---` markers and extracts:
+
+- `name`, falling back to the filename stem;
+- `description`, combined with the first relevant body section; and
+- `body`, containing the Markdown after frontmatter.
+
+The loader raises `FileNotFoundError` for missing paths and `ValueError` for non-Markdown files, unreadable files, or files without a usable description.
+
+## Testing Strategy
+
+The smoke tests are intentionally offline and use import guards, mocks, temporary files, and a fake `BaseAgent` subclass. They do not contact Ollama or Gemini.
+
+```bash
+python3 -m unittest discover -s tests -v
 ```
 
-### Failure (Max Iterations)
-```python
-{
-    "success": False,
-    "error": "Max iterations (10) reached without task completion",
-    "last_response": "...",
-    "conversation": [...]
-}
-```
+The suite checks:
 
----
+- import safety without `google-genai`;
+- import safety and explicit failure without `python-docx`;
+- CLI module loading and blank-key validation;
+- tool-result continuation through the shared loop; and
+- max-iteration termination.
 
-## Execution Flow Diagram (Simplified)
+For syntax validation, compile active files while excluding `.git` and `venv`. Live provider checks require their respective services, credentials, models, and network access.
 
-```
-    ┌─────────────────────────────────┐
-    │  OllamaAgent / GeminiAgent      │
-    │  execute_task(task)             │
-    └──────────────┬──────────────────┘
-                   │
-                   ▼
-    ┌─────────────────────────────────┐
-    │  Check backend connection       │
-    │  (Ollama or Gemini)             │
-    └──────────┬──────────────────────┘
-               │
-        ┌──────▼─────┐
-        │  Connected?│
-        └──┬──────┬──┘
-         NO│      │YES
-           │      │
-           │      ▼
-           │  ┌─────────────────────────┐
-           │  │ Prepare System Prompt  │
-           │  │ + Tool Descriptions    │
-           │  └────────┬────────────────┘
-           │           │
-           │           ▼
-           │  ┌─────────────────────────┐
-           │  │ Call LLM with Prompt    │ ◄──┐
-           │  │ (Ollama or Gemini)      │    │
-           │  └────────┬────────────────┘    │
-           │           │                     │
-           │           ▼                     │
-           │  ┌─────────────────────────┐    │
-           │  │ Extract JSON Tool Calls │    │
-           │  └────────┬────────────────┘    │
-           │           │                     │
-           │      ┌────▼────┐                │
-           │      │ Any     │                │
-           │      │ Tools?  │                │
-           │      └───┬──┬──┘                │
-           │        NO│ │YES                │
-           │          │ │                   │
-           │    ┌─────▼─▼──────────┐        │
-           │    │ Execute Tools    │        │
-           │    │ Collect Results  │        │
-           │    └────────┬─────────┘        │
-           │             │                  │
-           │      ┌──────▼────────┐         │
-           │      │ Max Iters     │         │
-           │      │ Reached?      │         │
-           │      └──┬────────┬───┘         │
-           │        NO│      │YES           │
-           │          │      │              │
-           │          │      ▼              │
-           │          │  Return Failure    │
-           │          │                    │
-           │          ▼                    │
-           │      Build Next Prompt        │
-           │      (with results) ────────┐ │
-           │                             │ │
-           └─────────────────────────────┘ │
-                                            │
-             ┌──────────────────────────────┘
-             │
-             ▼
-       Return Success
+## Extension Guidance
 
-```
+To add a tool:
 
----
+1. Implement a typed handler in `tools.py`.
+2. Return the standard `success`/result-or-error dictionary.
+3. Add its metadata and callable to `TOOLS`.
+4. Add a focused offline test.
+5. Run the smoke suite.
 
-## Summary
+To add a provider, subclass `BaseAgent` and implement the five backend hooks. Keep prompt construction, extraction, tool execution, logging, conversation tracking, and iteration limits in `BaseAgent` so provider behavior remains consistent.
 
-The orchestrator implements a **reasoning loop**:
+## Current Limits
 
-1. **Setup**: Initialize, validate backend, prepare tools list
-2. **Loop** (up to 10 iterations):
-   - Ask LLM what to do next
-   - LLM responds with optional tool calls
-   - Execute all tool calls
-   - If no tools → **task complete**
-   - If tools were called → feed results back and loop
-3. **Done**: Return result + history
-
-This design allows a single LLM to autonomously:
-- Break down complex tasks
-- Use tools as needed
-- Learn from results
-- Adapt strategy
-- Reach conclusions
-
-Both Ollama and Gemini backends work the same way—only the LLM communication layer differs.
+The framework is synchronous and single-threaded. It does not currently provide streaming responses, concurrent tool execution, automatic retries, persistent conversation storage, or live integration tests. These are boundaries of the current implementation, not required setup steps.
