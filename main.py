@@ -22,7 +22,13 @@ import argparse
 import os
 import sys
 
-import requests
+try:
+    import requests
+except ImportError as exc:  # pragma: no cover - exercised through import isolation tests
+    requests = None
+    REQUESTS_IMPORT_ERROR = exc
+else:
+    REQUESTS_IMPORT_ERROR = None
 
 try:
     from decouple import config
@@ -44,6 +50,9 @@ def validate_ollama_connection(base_url: str = "http://localhost:11434") -> bool
     Returns:
         True if Ollama is reachable, False otherwise
     """
+    if requests is None:
+        return False
+
     try:
         response = requests.get(f"{base_url}/api/tags", timeout=5)
         return response.status_code == 200
@@ -62,7 +71,7 @@ def validate_gemini_api_key(api_key_name: str = "GOOGLE_API_KEY") -> bool:
         True if API key is set, False otherwise
     """
     api_key = config(api_key_name, default=None)
-    return api_key is not None
+    return bool(api_key and str(api_key).strip())
 
 
 def main():
@@ -177,6 +186,13 @@ Examples:
 
     # Validate backend availability
     if args.provider == "ollama":
+        if requests is None:
+            print(
+                "❌ Error: Ollama support requires the requests package. "
+                "Install project dependencies with: pip install -r requirements.txt",
+                file=sys.stderr,
+            )
+            sys.exit(1)
         if not validate_ollama_connection():
             print(
                 "❌ Error: Ollama service is not running.",

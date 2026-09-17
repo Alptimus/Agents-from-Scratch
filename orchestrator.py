@@ -23,7 +23,13 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from datetime import datetime
 
-import requests
+try:
+    import requests
+except ImportError as exc:  # pragma: no cover - exercised through import isolation tests
+    requests = None
+    REQUESTS_IMPORT_ERROR = exc
+else:
+    REQUESTS_IMPORT_ERROR = None
 from logger_config import setup_logging
 
 # Add parent directory to path to import tools
@@ -469,6 +475,9 @@ class OllamaAgent(BaseAgent):
 
     def _check_connection(self) -> bool:
         """Check if Ollama is running and accessible."""
+        if requests is None:
+            return False
+
         try:
             response = requests.get(
                 f"{self.ollama_base_url}/api/tags",
@@ -492,6 +501,14 @@ class OllamaAgent(BaseAgent):
         Returns:
             Full response text, or None if request failed
         """
+        if requests is None:
+            if self.verbose:
+                print(
+                    "[ERROR] Ollama support requires the requests package. "
+                    "Install project dependencies with: pip install -r requirements.txt"
+                )
+            return None
+
         try:
             response = requests.post(
                 self.api_url,

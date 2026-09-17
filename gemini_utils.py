@@ -4,18 +4,39 @@ Gemini API utilities for orchestrator integration.
 Provides helper functions for initializing Gemini client and making API calls.
 """
 
+import os
+from typing import Any
+
 try:
     from google import genai
     from google.genai.types import GenerateContentConfig, HarmCategory, HarmBlockThreshold, SafetySetting
-except ImportError:
-    raise ImportError(
-        "google-genai is not installed. Install it with: pip install -r requirements.txt"
-    )
+except ImportError as exc:  # pragma: no cover - exercised through import isolation tests
+    genai = None
+    GenerateContentConfig = None
+    HarmCategory = None
+    HarmBlockThreshold = None
+    SafetySetting = None
+    GEMINI_IMPORT_ERROR = exc
+else:
+    GEMINI_IMPORT_ERROR = None
 
-from decouple import config
+try:
+    from decouple import config
+except ImportError:  # pragma: no cover - fallback when dependency is absent
+    def config(name: str, default: Any = None) -> Any:
+        return os.environ.get(name, default)
 
 
-def get_gemini_client(api_key_name: str = "GOOGLE_API_KEY") -> genai.Client:
+def _require_gemini_dependencies() -> None:
+    """Raise an actionable error when the Gemini SDK is unavailable."""
+    if genai is None:
+        raise RuntimeError(
+            "Gemini support requires google-genai. Install project dependencies with: "
+            "pip install -r requirements.txt"
+        ) from GEMINI_IMPORT_ERROR
+
+
+def get_gemini_client(api_key_name: str = "GOOGLE_API_KEY") -> Any:
     """
     Initialize and return a Google Gemini client.
 
@@ -28,6 +49,7 @@ def get_gemini_client(api_key_name: str = "GOOGLE_API_KEY") -> genai.Client:
     Raises:
         ValueError: If API key is not found in environment
     """
+    _require_gemini_dependencies()
     api_key = config(api_key_name, default=None)
     if not api_key:
         raise ValueError(
@@ -37,7 +59,7 @@ def get_gemini_client(api_key_name: str = "GOOGLE_API_KEY") -> genai.Client:
     return genai.Client(api_key=api_key)
 
 
-def call_gemini(client: genai.Client, prompt: str, model: str = "gemini-2.5-flash") -> str:
+def call_gemini(client: Any, prompt: str, model: str = "gemini-2.5-flash") -> str:
     """
     Call Gemini API with a prompt and return the response text.
 
@@ -52,6 +74,7 @@ def call_gemini(client: genai.Client, prompt: str, model: str = "gemini-2.5-flas
     Raises:
         Exception: If API call fails
     """
+    _require_gemini_dependencies()
     response = client.models.generate_content(
         model=model,
         contents=prompt,
@@ -77,14 +100,3 @@ def call_gemini(client: genai.Client, prompt: str, model: str = "gemini-2.5-flas
         )
     )
     return response.text.strip()
-
-
-if __name__ == "__main__":
-    # Example usage
-    try:
-        client = get_gemini_client()
-        prompt = "What is the capital of France?"
-        response = call_gemini(client, prompt)
-        print(f"Gemini response: {response}")
-    except Exception as e:
-        print(f"Error calling Gemini API: {e}")

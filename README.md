@@ -14,10 +14,7 @@ pip install -r requirements.txt
 ```
 
 ### 2. Configure API Keys
-```bash
-cp .env.example .env
-# Add your GOOGLE_API_KEY for Gemini backend (optional)
-```
+Set `GOOGLE_API_KEY` in your environment or in a local `.env` file for the optional Gemini backend.
 
 ### 3. Run a Task
 
@@ -38,6 +35,16 @@ from orchestrator import OllamaAgent  # or GeminiAgent
 agent = OllamaAgent(model="mistral")
 print(agent.execute_task("Your task here"))
 ```
+
+## Smoke Tests
+
+Run the offline smoke suite without starting Ollama or configuring Gemini:
+
+```bash
+python3 -m unittest discover -s tests -v
+```
+
+Live Ollama execution requires `ollama serve`; live Gemini execution requires `GOOGLE_API_KEY` and the installed dependencies in `requirements.txt`.
 
 ## Full Documentation
 

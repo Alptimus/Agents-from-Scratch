@@ -253,7 +253,7 @@ See [requirements.txt](requirements.txt) for exact versions.
 ## Known Limitations & Next Steps
 
 - ✅ [main.py](main.py) implemented with CLI support
-- ⚠️ No test suite — consider adding pytest fixtures for tool execution
+- ✅ `tests/` contains lightweight offline smoke tests for imports, tools, CLI validation, and the shared agent loop
 - ⚠️ Single-threaded agent loop — concurrent task execution not yet supported
 - ✅ **Ready for**: Task automation, autonomous workflows, multi-model orchestration
 

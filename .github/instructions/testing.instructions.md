@@ -6,22 +6,21 @@ applyTo: "**/test_*.py,**/tests/**"
 
 # Testing Strategy Guide
 
-This project currently has **no test suite**. This guide establishes testing patterns for tools, agents, and the orchestration system.
+The project has a lightweight `unittest` smoke suite under `tests/`. This guide establishes testing patterns for tools, agents, and the orchestration system.
 
 ## Test Structure
 
-Create tests at the same level as source files:
+Keep focused tests under `tests/`:
 ```
 Agents-from-Scratch/
 ├── tools.py
 ├── orchestrator.py
-├── test_tools.py         # NEW: Test tool functionality
-├── test_orchestrator.py  # NEW: Test agent behavior
-├── test_integration.py   # NEW: End-to-end agent tasks
 └── tests/
-    ├── __init__.py
-    ├── fixtures/         # Shared test data (mock files, configs)
-    └── conftest.py       # pytest configuration & global fixtures
+    ├── test_agent_loop.py
+    ├── test_gemini_import.py
+    ├── test_main_cli.py
+    ├── test_orchestrator_import.py
+    └── test_tools_optional_docx.py
 ```
 
 ## Tool Testing

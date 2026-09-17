@@ -1,3 +1,5 @@
+"""Legacy manual Gemini demo; not part of the active orchestrator flow."""
+
 import os
 import numpy as np
 from google import genai
