@@ -19,12 +19,13 @@ RUN curl -L "${LLAMAFILE_URL}" -o "${LLAMAFILE_NAME}" && \
     chmod +x "${LLAMAFILE_NAME}"
 
 # Create an entrypoint script
-RUN echo '#!/bin/sh\nexec /home/$LLAMAFILE_NAME --server --port $PORT --host 0.0.0.0 -ngl 9999 --nobrowser' > /entrypoint.sh && \
+RUN echo "#!/bin/sh\nexec /home/$LLAMAFILE_NAME --server --port $PORT --host 0.0.0.0 -ngl 9999" > /entrypoint.sh && \
     chmod +x /entrypoint.sh
 
 EXPOSE ${PORT}
-ENTRYPOINT ["/entrypoint.sh"]
+ENTRYPOINT ["/bin/sh", "/entrypoint.sh"]
 
 # Running Commands
 # docker build -t debian-llamafile .
 # docker run -d -p 1111:1111 debian-llamafile
+# docker run -d --gpus all -p 11434:1111 debian-llamafile
