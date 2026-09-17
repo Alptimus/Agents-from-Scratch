@@ -12,7 +12,11 @@ import os
 import subprocess
 from pathlib import Path
 from typing import Any, Dict, List
-import docx # Added for docx file reading
+
+try:
+    import docx
+except ImportError:  # pragma: no cover - optional dependency
+    docx = None
 
 
 def read_file(file_path: str) -> Dict[str, Any]:
@@ -85,6 +89,11 @@ def run_shell(command: str) -> Dict[str, Any]:
 
 def read_docx_file(file_path: str) -> Dict[str, Any]:
     """Read the complete text content from a .docx file."""
+    if docx is None:
+        return {
+            "success": False,
+            "error": "DOCX support requires python-docx. Install it with: pip install python-docx"
+        }
     try:
         path = Path(file_path)
         if not path.exists():

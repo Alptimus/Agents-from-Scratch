@@ -2,6 +2,19 @@
 
 This is a Python-based **autonomous AI agent framework** that orchestrates task execution by combining cloud-based (Google Gemini) and local LLM (Ollama/Llamafile) capabilities.
 
+## Working Rules for This Repo
+
+These are the guardrails most likely to reduce friction in this codebase:
+
+- Start with a narrow read of the exact files involved; do not rewrite broad sections of the project without confirming the current implementation.
+- Treat this repo as a Python tool-automation project: verify imports, tool registration, and task-loop behavior before changing agent behavior.
+- Prefer surgical edits to [orchestrator.py](../orchestrator.py), [tools.py](../tools.py), and [main.py](../main.py); avoid broad rewrites unless the task clearly requires them.
+- When a request touches execution or validation, run the smallest relevant command before claiming success. If there is no automated test suite for the change, state that limitation and use a targeted syntax or runtime check instead.
+- Preserve the existing instruction structure: keep project guidance concise, and prefer links to [README.md](../README.md) and the files in [.github/instructions](./instructions) rather than duplicating long explanations in every task.
+- Do not invent missing APIs, environment assumptions, or tool names; confirm actual code paths and config values before generating patches.
+- If a task spans multiple steps, keep the agent loop explicit: inspect, patch, validate, summarize.
+- Favor direct evidence over assumptions. A claim like “fixed” or “works” must be backed by a fresh verification result from the relevant command or test.
+
 ## Project Architecture
 
 ```
